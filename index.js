@@ -1,142 +1,107 @@
 'use strict'
 
-// Flags: --expose-internals
-
-// const errors = require('internal/errors');
-// const internalURL = require('internal/url');
-// const  { assertEncoding } = require('internal/fs/utils')
-// const getPathFromURL = internalURL.getPathFromURL
 const fs = require('fs')
 const status_type = require('bob-status')
 
-const kMinPoolSpace = 128;
-
 module.exports = FileSource
 
-var pool;
-
-function allocNewPool(poolSize) {
-  pool = Buffer.allocUnsafe(poolSize);
-  pool.used = 0;
-}
-
-// util.inherits(FileSource, Readable);
-// fs.FileSource = FileSource;
-
 function FileSource(path, options) {
-  if (!(this instanceof FileSource))
-    return new FileSource(path, options);
+  if (!(this instanceof FileSource)) {
+    return new FileSource(path, options)
+  }
 
-  // a little bit bigger buffer and water marks by default
-  options = copyObject(getOptions(options, {}));
-  if (options.highWaterMark === undefined)
-    options.highWaterMark = 64 * 1024;
+  if (options !== undefined && typeof options !== 'object') {
+    throw new TypeError(`options MUST be an Object, found ${typeof options}`)
+  }
 
-  // Readable.call(this, options);
+  options = copyObject(options)
 
-  handleError((this.path = path/*getPathFromURL(path)*/));
+  if (path !== undefined && typeof path !== 'string') {
+    throw new TypeError(`path MUST be a String, found ${typeof path}`)
+  }
+
+  this.path = path
+
   this.fd = options.fd === undefined ? null : options.fd;
   this.flags = options.flags === undefined ? 'r' : options.flags;
   this.mode = options.mode === undefined ? 0o666 : options.mode;
 
-  this.start = options.start;
-  this.end = options.end;
-  // this.autoClose = options.autoClose === undefined ? true : options.autoClose;
   this.pos = 0;
-  this.bytesRead = 0;
 
-  if (this.start !== undefined) {
-    if (typeof this.start !== 'number') {
-      throw new TypeError(`options.start MUST be a Number, found ${typeof this.start}`)
-      // throw new errors.TypeError('ERR_INVALID_ARG_TYPE',
-      //                            'start',
-      //                            'number',
-      //                            this.start);
+  if (options.start !== undefined) {
+    if (typeof options.start !== 'number') {
+      throw new TypeError(`options.start MUST be a Number, found ${typeof options.start}`)
     }
-    if (this.end === undefined) {
-      this.end = Infinity;
-    } else if (typeof this.end !== 'number') {
-      throw new TypeError(`options.end MUST be a Number or undefined, found ${typeof this.end}`)
-      // throw new errors.TypeError('ERR_INVALID_ARG_TYPE',
-      //                            status_type.end,
-      //                            'number',
-      //                            this.end);
+    if (options.end === undefined) {
+      options.end = Infinity;
+    } else if (typeof options.end !== 'number') {
+      throw new TypeError(`options.end MUST be a Number or undefined, found ${typeof options.end}`)
     }
 
-    if (this.start > this.end) {
-      const errVal = `{start: ${this.start}, end: ${this.end}}`;
+    if (options.start > options.end) {
+      const errVal = `{start: ${options.start}, end: ${options.end}}`;
       throw new RangeError(`start must be greater than end, found ${errVal}`)
-      // throw new errors.RangeError('ERR_VALUE_OUT_OF_RANGE',
-      //                             'start',
-      //                             '<= "end"',
-      //                             errVal);
     }
 
-    this.pos = this.start !== undefined ? this.start : 0;
+    this.pos = options.start !== undefined ? options.start : 0;
   }
 
+  // XXX(Fishrock123):
+  // streams3 opens the FD here, but I think error handling might be better if
+  // it is opened during pull flow.
+  //
+  // That has some disadvantages, namely around telling when to actually open
+  // the file, but also the delayment of error until after stream construction.
+  //
   // if (typeof this.fd !== 'number')
-  //   this.open();
-
-  // this.on(status_type.end, function() {
-  //   if (this.autoClose) {
-  //     this.destroy();
-  //   }
-  // });
+  //   this.open()
 }
 
 FileSource.prototype.bindSink = function bindSink (sink) {
   this.sink = sink
 }
 
-FileSource.prototype.pull = function(error, buffer) {
+FileSource.prototype.sendError = function sendError (error) {
+  this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
+}
+
+FileSource.prototype.pull = function pull (error, buffer) {
   if (error) {
     if (typeof this.fd === 'number') {
       fs.close(this.fd, (closeError) => {
         this.fd = null
-        if (closeError) {
-          this.sink.next(status_type.error, closeError, Buffer.alloc(0), 0)
-        } else {
-          this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
-        }
+        this.sendError(closeError || error)
       })
     } else {
-      return this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
+      return this.sendError(error)
     }
   }
 
   if (typeof this.fd !== 'number') {
     fs.open(this.path, this.flags, this.mode, (error, fd) => {
       if (error) {
-        return this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
+        return this.sendError(error)
       }
 
       this.fd = fd
 
-      this._read(buffer)
+      this.readFromFile(buffer)
     })
   } else {
-    this._read(buffer)
+    this.readFromFile(buffer)
   }
 }
 
-FileSource.prototype._read = function(buffer) {
+FileSource.prototype.readFromFile = function readFromFile (buffer) {
   if (typeof this.fd !== 'number') {
     return this.pull(null, buffer)
   }
-
-  if (this.destroyed)
-    return;
 
   fs.read(this.fd, buffer, 0, buffer.length, this.pos, (error, bytesRead) => {
     if (error) {
       fs.close(this.fd, (closeError) => {
         this.fd = null
-        if (closeError) {
-          this.sink.next(status_type.error, closeError, Buffer.alloc(0), 0)
-        } else {
-          this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
-        }
+        this.sendError(closeError || error)
       })
     } else {
       if (bytesRead > 0) {
@@ -146,7 +111,7 @@ FileSource.prototype._read = function(buffer) {
         fs.close(this.fd, (closeError) => {
           this.fd = null
           if (closeError) {
-            this.sink.next(status_type.error, closeError, Buffer.alloc(0), 0)
+            this.sendError(closeError)
           } else {
             this.sink.next(status_type.end, null, buffer, 0)
           }
@@ -156,72 +121,7 @@ FileSource.prototype._read = function(buffer) {
   })
 }
 
-// FileSource.prototype._destroy = function(err, cb) {
-//   if (this.closed || typeof this.fd !== 'number') {
-//     if (typeof this.fd !== 'number') {
-//       this.once('open', closeFsStream.bind(null, this, cb, err));
-//       return;
-//     }
-//
-//     return process.nextTick(() => {
-//       cb(err);
-//       this.emit('close');
-//     });
-//   }
-//
-//   this.closed = true;
-//
-//   closeFsStream(this, cb);
-//   this.fd = null;
-// };
-//
-// FileSource.prototype.close = function(cb) {
-//   this.destroy(null, cb);
-// };
-
 /* ## Helpers ## */
-
-// function closeFsStream(stream, cb, err) {
-//   fs.close(stream.fd, (er) => {
-//     er = er || err;
-//     cb(er);
-//     if (!er)
-//       stream.emit('close');
-//   });
-// }
-
-function handleError(val, callback) {
-  if (val instanceof Error) {
-    if (typeof callback === 'function') {
-      process.nextTick(callback, val);
-      return true;
-    } else throw val;
-  }
-  return false;
-}
-
-function getOptions(options, defaultOptions) {
-  if (options === null || options === undefined ||
-      typeof options === 'function') {
-    return defaultOptions;
-  }
-
-  if (typeof options === 'string') {
-    defaultOptions = util._extend({}, defaultOptions);
-    defaultOptions.encoding = options;
-    options = defaultOptions;
-  } else if (typeof options !== 'object') {
-    throw new TypeError(`options MUST be an Object, found ${typeof options}`)
-    // throw new errors.TypeError('ERR_INVALID_ARG_TYPE',
-    //                            'options',
-    //                            ['string', 'object'],
-    //                            options);
-  }
-
-  // if (options.encoding !== 'buffer')
-    // assertEncoding(options.encoding);
-  return options;
-}
 
 function copyObject(source) {
   var target = {};
