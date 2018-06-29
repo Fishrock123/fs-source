@@ -1,7 +1,7 @@
 'use strict'
 
 const fs = require('fs')
-const status_type = require('bob-status')
+const status = require('bob-status')
 
 module.exports = FileSource
 
@@ -61,26 +61,22 @@ FileSource.prototype.bindSink = function bindSink (sink) {
   this.sink = sink
 }
 
-FileSource.prototype.sendError = function sendError (error) {
-  this.sink.next(status_type.error, error, Buffer.alloc(0), 0)
-}
-
 FileSource.prototype.pull = function pull (error, buffer) {
   if (error) {
     if (typeof this.fd === 'number') {
       fs.close(this.fd, (closeError) => {
         this.fd = null
-        this.sendError(closeError || error)
+        tthis.sink.next(status.error, closeError || error)
       })
     } else {
-      return this.sendError(error)
+      return this.sink.next(status.error, error)
     }
   }
 
   if (typeof this.fd !== 'number') {
     fs.open(this.path, this.flags, this.mode, (error, fd) => {
       if (error) {
-        return this.sendError(error)
+        return this.sink.next(status.error, error)
       }
 
       this.fd = fd
@@ -101,19 +97,19 @@ FileSource.prototype.readFromFile = function readFromFile (buffer) {
     if (error) {
       fs.close(this.fd, (closeError) => {
         this.fd = null
-        this.sendError(closeError || error)
+        this.sink.next(status.error, closeError || error)
       })
     } else {
       if (bytesRead > 0) {
         this.pos += bytesRead;
-        this.sink.next(status_type.continue, null, buffer, bytesRead)
+        this.sink.next(status.continue, null, buffer, bytesRead)
       } else {
         fs.close(this.fd, (closeError) => {
           this.fd = null
           if (closeError) {
-            this.sendError(closeError)
+            this.sink.next(status.error, closeError)
           } else {
-            this.sink.next(status_type.end, null, buffer, 0)
+            this.sink.next(status.end, null, buffer, 0)
           }
         })
       }
