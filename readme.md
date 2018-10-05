@@ -4,7 +4,7 @@ A file system source for the [BOB](https://github.com/Fishrock123/bob) streaming
 
 ## Usage
 
-```
+```js
 const FileSource = require('fs-source')
 new FileSource(path, options)
 ```
@@ -13,7 +13,7 @@ Implements a [BOB source](https://github.com/Fishrock123/bob/blob/master/referen
 
 ### Example
 
-```
+```js
 const FileSource = require('fs-source')
 
 const source = new FileSource('my-file')
