@@ -4,7 +4,7 @@
   "description": "A file system source for the BOB streaming protocol.",
   "main": "index.js",
   "scripts": {
-    "test": "node ./test/test-basic.js"
+    "test": "node ./test/test-basic.js && node ./test/test-offset.js"
   },
   "repository": {
     "type": "git",

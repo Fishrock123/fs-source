@@ -56,7 +56,7 @@ class FileSource {
     this.sink = sink
   }
 
-  pull (error, buffer) {
+  pull (error, buffer, offset) {
     if (error) {
       if (typeof this.fd === 'number') {
         fs.close(this.fd, (closeError) => {
@@ -76,19 +76,21 @@ class FileSource {
 
         this.fd = fd
 
-        this.readFromFile(buffer)
+        this.readFromFile(buffer, offset)
       })
     } else {
-      this.readFromFile(buffer)
+      this.readFromFile(buffer, offset)
     }
   }
 
-  readFromFile (buffer) {
+  readFromFile (buffer, offset) {
     if (typeof this.fd !== 'number') {
       return this.pull(null, buffer)
     }
 
-    fs.read(this.fd, buffer, 0, buffer.length, this.pos, (error, bytesRead) => {
+    const pos = offset !== undefined ? offset : this.pos
+
+    fs.read(this.fd, buffer, 0, buffer.length, pos, (error, bytesRead) => {
       if (error) {
         fs.close(this.fd, (closeError) => {
           this.fd = null
@@ -96,7 +98,7 @@ class FileSource {
         })
       } else {
         if (bytesRead > 0) {
-          this.pos += bytesRead;
+          if (offset === undefined) this.pos += bytesRead;
           this.sink.next(status.continue, null, buffer, bytesRead)
         } else {
           fs.close(this.fd, (closeError) => {
