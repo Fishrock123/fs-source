@@ -5,9 +5,11 @@ const assert = require('assert').strict
 const status_type = require('bob-status')
 
 class AssertionSink {
-  constructor (assertions_queue) {
+  constructor (assertions_queue, options = {}) {
     this.source = null
     this.bindCb = null
+
+    this.offset = options.offset
 
     this._queue_index = 0
     this._assertions_queue = assertions_queue
@@ -19,7 +21,7 @@ class AssertionSink {
 
     this.source.bindSink(this)
 
-    this.source.pull(null, Buffer.alloc(this._assertions_queue[this._queue_index].length))
+    this.source.pull(null, Buffer.alloc(this._assertions_queue[this._queue_index].length), this.offset)
   }
 
   next (status, error, buffer, bytes) {
@@ -33,7 +35,7 @@ class AssertionSink {
       return this.source.pull(null, Buffer.alloc(0))
     }
 
-    this.source.pull(null, Buffer.alloc(this._assertions_queue[this._queue_index].length))
+    this.source.pull(null, Buffer.alloc(this._assertions_queue[this._queue_index].length), this.offset)
   }
 }
 
