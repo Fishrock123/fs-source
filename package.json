@@ -4,7 +4,9 @@
   "description": "A file system source for the BOB streaming protocol.",
   "main": "index.js",
   "scripts": {
-    "test": "node ./test/test-basic.js"
+    "test-only": "tap test/*.js -J",
+    "lint": "standard --verbose",
+    "test": "npm run -s lint && npm run -s test-only"
   },
   "repository": {
     "type": "git",
@@ -30,5 +32,9 @@
   "dependencies": {
     "bob-status": "0.0.0",
     "bob-streams": "0.2.4"
+  },
+  "devDependencies": {
+    "standard": "^13.0.2",
+    "tap": "^14.4.1"
   }
 }
