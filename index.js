@@ -61,7 +61,7 @@ class FileSource {
       if (typeof this.fd === 'number') {
         fs.close(this.fd, (closeError) => {
           this.fd = null
-          tthis.sink.next(status.error, closeError || error)
+          this.sink.next(status.error, closeError || error)
         })
       } else {
         return this.sink.next(status.error, error)
